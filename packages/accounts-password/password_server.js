@@ -1099,11 +1099,11 @@ Meteor.methods({createUser: function (options) {
     "password",
     function () {
       // createUser() above does more checking.
-      check(options, Object);
+      /* check(options, Object);
       if (Accounts._options.forbidClientAccountCreation)
         return {
           error: new Meteor.Error(403, "Signups forbidden")
-        };
+        }; */
 
       // Create user. result contains id and token.
       var userId = createUser(options);

@@ -18,6 +18,7 @@ Accounts = new AccountsServer(Meteor.server);
  * @type {Mongo.Collection}
  * @importFromPackage meteor
 */
+
 Meteor.users = Accounts.users;
 
 export {
