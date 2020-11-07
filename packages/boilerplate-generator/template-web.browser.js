@@ -1,16 +1,21 @@
 import template from './template';
 
+const sri = (sri, mode) =>
+  (sri && mode) ? ` integrity="sha512-${sri}" crossorigin="${mode}"` : '';
+
 export const headTemplate = ({
   css,
   htmlAttributes,
   bundledJsCssUrlRewriteHook,
+  sriMode,
   head,
   dynamicHead,
 }) => {
   var headSections = head.split(/<meteor-bundled-css[^<>]*>/, 2);
   var cssBundle = [...(css || []).map(file =>
-    template('  <link rel="stylesheet" type="text/css" class="__meteor-css__" href="<%- href %>">')({
+    template('  <link rel="stylesheet" type="text/css" class="__meteor-css__" href="<%- href %>"<%= sri %>>')({
       href: bundledJsCssUrlRewriteHook(file.url),
+      sri: sri(file.sri, sriMode),
     })
   )].join('\n');
 
@@ -21,7 +26,7 @@ export const headTemplate = ({
         attrValue: htmlAttributes[key],
       })
     ).join('') + '>',
-    
+
     '<head>',
 
     (headSections.length === 1)
@@ -37,25 +42,29 @@ export const headTemplate = ({
 // Template function for rendering the boilerplate html for browsers
 export const closeTemplate = ({
   meteorRuntimeConfig,
+  meteorRuntimeHash,
   rootUrlPathPrefix,
   inlineScriptsAllowed,
   js,
   additionalStaticJs,
   bundledJsCssUrlRewriteHook,
+  sriMode,
 }) => [
   '',
   inlineScriptsAllowed
     ? template('  <script type="text/javascript">__meteor_runtime_config__ = JSON.parse(decodeURIComponent(<%= conf %>))</script>')({
       conf: meteorRuntimeConfig,
     })
-    : template('  <script type="text/javascript" src="<%- src %>/meteor_runtime_config.js"></script>')({
+    : template('  <script type="text/javascript" src="<%- src %>/meteor_runtime_config.js?hash=<%- hash %>"></script>')({
       src: rootUrlPathPrefix,
+      hash: meteorRuntimeHash,
     }),
   '',
 
   ...(js || []).map(file =>
-    template('  <script type="text/javascript" src="<%- src %>"></script>')({
+    template('  <script type="text/javascript" src="<%- src %>"<%= sri %>></script>')({
       src: bundledJsCssUrlRewriteHook(file.url),
+      sri: sri(file.sri, sriMode),
     })
   ),
 

@@ -61,7 +61,7 @@ run_save_node_bin: &run_save_node_bin
 build_machine_environment: &build_machine_environment
   # Specify that we want an actual machine (ala Circle 1.0), not a Docker image.
   docker:
-    - image: meteor/circleci
+    - image: meteor/circleci:android-28-node-12
   environment:
     # This multiplier scales the waitSecs for selftests.
     TIMEOUT_SCALE_FACTOR: 8
@@ -93,8 +93,8 @@ build_machine_environment: &build_machine_environment
     SELF_TEST_TOOL_NODE_FLAGS: " "
 
     # Variables for load-balancing
-    NUM_GROUPS: 11
-    RUNNING_AVG_LENGTH: 5
+    NUM_GROUPS: 12
+    RUNNING_AVG_LENGTH: 6
 
 jobs:
   Get Ready:
@@ -113,12 +113,26 @@ jobs:
           keys:
             - v1-dev-bundle-cache-{{ checksum "meteor" }}
             - v1-dev-bundle-cache-
+      - run:
+          name: Combine NPM Shrinkwrap Files
+          command: |
+            for d in packages/*/.npm/package; do cat $d/npm-shrinkwrap.json >> shrinkwraps.txt; done
+            for d in packages/*/.npm/plugin/*; do cat $d/npm-shrinkwrap.json >> shrinkwraps.txt; done
       - restore_cache:
           keys:
-            - v2-other-deps-cache-{{ .Branch }}-{{ .Revision }}
-            - v2-other-deps-cache-{{ .Branch }}-
+            - package-npm-deps-cache-group1-v1-{{ checksum "shrinkwraps.txt" }}
+            - package-npm-deps-cache-group1-v1-
       - restore_cache:
-          keys: 
+          keys:
+            - package-npm-deps-cache-group2-v3-{{ checksum "shrinkwraps.txt" }}
+            - package-npm-deps-cache-group2-v3-
+      - restore_cache:
+          keys:
+            - v5-other-deps-cache-{{ .Branch }}-{{ checksum "meteor" }}-{{ .Revision }}
+            - v5-other-deps-cache-{{ .Branch }}-{{ checksum "meteor" }}-
+            - v5-other-deps-cache-{{ .Branch }}-
+      - restore_cache:
+          keys:
             - v1-test-groups-{{ .Branch }}
             - v1-test-groups-
       - run:
@@ -134,6 +148,10 @@ jobs:
           name: Get Ready
           command: |
             eval $PRE_TEST_COMMANDS;
+            pushd tools
+            # Ensure that meteor/tools has no TypeScript errors.
+            ../meteor npx tsc --noEmit
+            popd
             ./meteor --get-ready
           # shouldn't take longer than 20 minutes
           no_output_timeout: 20m
@@ -166,7 +184,7 @@ jobs:
             ./meteor self-test \
               'add debugOnly and prodOnly packages' \
               --retries ${METEOR_SELF_TEST_RETRIES} \
-              --headless
+              --headless \
           no_output_timeout: 20m
       - run:
           name: "Running self-test (Custom Warehouse Tests)"
@@ -428,7 +446,7 @@ jobs:
           path: /tmp/core_dumps
       - store_artifacts:
           path: /tmp/memuse.txt
- 
+
   Test Group 6:
     <<: *build_machine_environment
     steps:
@@ -629,6 +647,47 @@ jobs:
       - store_artifacts:
           path: /tmp/memuse.txt
 
+  Test Group 11:
+    <<: *build_machine_environment
+    steps:
+      - run:
+          <<: *run_log_mem_use
+      - run:
+          <<: *run_env_change
+      - attach_workspace:
+          at: .
+      - run:
+          name: "Print environment"
+          command: printenv
+      - run:
+          name: "Running self-test (Browserstack Test)"
+          command: |
+            TEST_GROUP='css hot code push|custom minifier - devel vs prod|versioning hot code push|javascript hot code push|add packages client archs';
+            echo $TEST_GROUP;
+            eval $PRE_TEST_COMMANDS;
+            ./meteor self-test \
+              "$TEST_GROUP" \
+              --browserstack \
+              --retries ${METEOR_SELF_TEST_RETRIES} \
+              --exclude "${SELF_TEST_EXCLUDE}" \
+              --headless \
+              --junit ./tmp/results/junit/11.xml \
+              --without-tag "custom-warehouse"
+          no_output_timeout: 40m
+      - run:
+          <<: *run_save_node_bin
+      - store_test_results:
+          path: ./tmp/results
+      - persist_to_workspace:
+          root: .
+          paths: ./tmp/results/junit
+      - store_artifacts:
+          path: ./tmp/results
+      - store_artifacts:
+          path: /tmp/core_dumps
+      - store_artifacts:
+          path: /tmp/memuse.txt
+
   # Test the JSDoc declarations which live within this codebase against the
   # Meteor Docs (https://github.com/meteor/docs) repository, where they'll
   # eventually be consumed.  This test aims to provide an early warning of
@@ -638,14 +697,14 @@ jobs:
   Docs:
     docker:
       # This Node version should match that in the meteor/docs CircleCI config.
-      - image: circleci/node:8
+      - image: meteor/circleci:android-28-node-12
     environment:
       CHECKOUT_METEOR_DOCS: /home/circleci/test_docs
     steps:
       - run:
-          name: Cloning "meteor/docs" Repository's "master" branch
+          name: Cloning "meteor/docs" Repository's "update-to-meteor-1.9" branch
           command: |
-            git clone https://github.com/meteor/docs.git ${CHECKOUT_METEOR_DOCS}
+            git clone --branch update-to-meteor-1.9 https://github.com/meteor/docs.git ${CHECKOUT_METEOR_DOCS}
       # The "docs" repository normally brings in the Meteor code as a Git
       # submodule checked out into the "code" directory.  As the goal of this
       # test is to run it against the _current_ repository's code, we'll move
@@ -691,8 +750,54 @@ jobs:
           key: v1-dev-bundle-cache-{{ checksum "meteor" }}
           paths:
             - "dev_bundle"
+      # The package npm dependencies are split into two caches to avoid an AWS
+      # `MetadataTooLarge` error that consistently appears if we put all of
+      # these folders in the same cache
       - save_cache:
-          key: v2-other-deps-cache-{{ .Branch }}-{{ .Revision }}
+          key: package-npm-deps-cache-group1-v1-{{ checksum "shrinkwraps.txt" }}
+          paths:
+            - packages/meteor/.npm/package/node_modules
+            - packages/modules-runtime/.npm/package/node_modules
+            - packages/modules/.npm/package/node_modules
+            - packages/ecmascript-runtime-server/.npm/package/node_modules
+            - packages/promise/.npm/package/node_modules
+            - packages/babel-compiler/.npm/package/node_modules
+            - packages/babel-runtime/.npm/package/node_modules
+            - packages/http/.npm/package/node_modules
+            - packages/socket-stream-client/.npm/package/node_modules
+            - packages/ddp-client/.npm/package/node_modules
+            - packages/npm-mongo/.npm/package/node_modules
+            - packages/package-version-parser/.npm/package/node_modules
+            - packages/boilerplate-generator/.npm/package/node_modules
+      - save_cache:
+          key: package-npm-deps-cache-group2-v3-{{ checksum "shrinkwraps.txt" }}
+          paths:
+            - packages/xmlbuilder/.npm/package/node_modules
+            - packages/logging/.npm/package/node_modules
+            - packages/webapp/.npm/package/node_modules
+            - packages/ddp-server/.npm/package/node_modules
+            - packages/mongo/.npm/package/node_modules
+            - packages/npm-bcrypt/.npm/package/node_modules
+            - packages/email/.npm/package/node_modules
+            - packages/caching-compiler/.npm/package/node_modules
+            - packages/less/.npm/plugin/compileLessBatch/node_modules
+            - packages/non-core/blaze/packages/spacebars-compiler/.npm/package/node_modules
+            - packages/boilerplate-generator-tests/.npm/package/node_modules
+            - packages/non-core/bundle-visualizer/.npm/package/node_modules
+            - packages/d3-hierarchy/.npm/package/node_modules
+            - packages/non-core/coffeescript-compiler/.npm/package/node_modules
+            - packages/server-render/.npm/package/node_modules
+            - packages/es5-shim/.npm/package/node_modules
+            - packages/force-ssl-common/.npm/package/node_modules
+            - packages/jshint/.npm/plugin/lintJshint/node_modules
+            - packages/minifier-css/.npm/package/node_modules
+            - packages/minifier-js/.npm/package/node_modules
+            - packages/standard-minifier-css/.npm/plugin/minifyStdCSS/node_modules
+            - packages/inter-process-messaging/.npm/package/node_modules
+            - packages/fetch/.npm/package/node_modules
+            - packages/non-core/mongo-decimal/.npm/package/node_modules
+      - save_cache:
+          key: v5-other-deps-cache-{{ .Branch }}-{{ checksum "meteor" }}-{{ .Revision }}
           paths:
             - ".babel-cache"
             - ".meteor"
@@ -739,6 +844,9 @@ workflows:
       - Test Group 10:
           requires:
             - Get Ready
+      - Test Group 11:
+          requires:
+            - Get Ready
       - Clean Up:
           requires:
             - Isolated Tests
@@ -753,3 +861,4 @@ workflows:
             - Test Group 8
             - Test Group 9
             - Test Group 10
+            - Test Group 11

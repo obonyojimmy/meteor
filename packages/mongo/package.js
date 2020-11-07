@@ -9,7 +9,7 @@
 
 Package.describe({
   summary: "Adaptor for using MongoDB and Minimongo over DDP",
-  version: '1.5.0'
+  version: '1.10.0'
 });
 
 Npm.depends({
@@ -36,6 +36,10 @@ Package.onUse(function (api) {
     'ecmascript',
     'mongo-dev-server',
   ]);
+
+  // Make weak use of Decimal type on client
+  api.use('mongo-decimal@0.1.1', 'client', {weak: true});
+  api.use('mongo-decimal@0.1.1', 'server');
 
   api.use('underscore', 'server');
 
@@ -65,9 +69,9 @@ Package.onUse(function (api) {
 
   // Stuff that should be exposed via a real API, but we haven't yet.
   api.export('MongoInternals', 'server');
-  // For tests only.
-  api.export('MongoTest', 'server', {testOnly: true});
+
   api.export("Mongo");
+  api.export('ObserveMultiplexer', 'server', {testOnly: true});
 
   api.addFiles(['mongo_driver.js', 'oplog_tailing.js',
                  'observe_multiplex.js', 'doc_fetcher.js',

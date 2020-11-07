@@ -1,3 +1,6 @@
+// Options that will be populated below and then passed to makeInstaller.
+var makeInstallerOptions = {};
+
 // RegExp matching strings that don't start with a `.` or a `/`.
 var topLevelIdPattern = /^[^./]/;
 
@@ -68,6 +71,10 @@ Module.prototype.useNode = function () {
     return false;
   }
 
+  // See tools/static-assets/server/npm-require.js for the implementation
+  // of npmRequire. Note that this strategy fails when importing ESM
+  // modules (typically, a .js file in a package with "type": "module" in
+  // its package.json), as of Node 12.16.0 (Meteor 1.9.1).
   this.exports = npmRequire(this.id);
 
   return true;

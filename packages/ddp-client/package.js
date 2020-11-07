@@ -1,11 +1,11 @@
 Package.describe({
   summary: "Meteor's latency-compensated distributed data client",
-  version: '2.3.2',
+  version: '2.3.3',
   documentation: null
 });
 
 Npm.depends({
-  lolex: '2.3.1'
+  lolex: '2.3.2'
 });
 
 Package.onUse((api) => {
@@ -54,8 +54,6 @@ Package.onTest((api) => {
     'ddp-common',
     'check'
   ]);
-
-  api.use('http', 'client');
 
   api.addFiles('test/stub_stream.js');
   api.addFiles('test/livedata_connection_tests.js');
